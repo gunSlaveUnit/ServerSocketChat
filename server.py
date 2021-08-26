@@ -1,27 +1,54 @@
 import socket
 import threading
-
-clients = []
-
-
-def process_connection(server_sock):
-    client_socket, addr = server_sock.accept()
-    print(f'Accepted connection from {addr}')
-    if addr not in clients:
-        clients.append(addr)
-    while True:
-        request = client_socket.recv(4096)
-        if not request:
-            break
-        print(request.decode())
-        client_socket.send(b'Hello')
+import time
 
 
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server_socket.bind(('127.0.0.1', 5000))
-server_socket.listen()
+class Server:
+    def __init__(self, host='127.0.0.1', port=9876):
+        self.host = host
+        self.port = port
+        self.clients = []
+        self.nicknames = []
 
-while True:
-    new_client_process = threading.Thread(target=process_connection, args=[server_socket])
-    new_client_process.start()
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind((host, port))
+        self.server.listen()
+
+    def run(self):
+        print(f"[ Server started at {self.host}:{self.port} ]")
+        while True:
+            client, address = self.server.accept()
+            time_connection = time.strftime("%Y-%m-%d-%H.%M.%S", time.localtime())
+            print(f"[{address[0]}]=[{address[1]}]=[{time_connection}]/: New Connection")
+
+            client.send('GETUSERNAME'.encode('utf-8'))
+            nickname = client.recv(1024).decode('utf-8')
+            self.nicknames.append(nickname)
+            self.clients.append(client)
+
+            time_connection = time.strftime("%Y-%m-%d-%H.%M.%S", time.localtime())
+            self.send_broadcast_message(f"[{self.host}]=[{self.port}]=[{time_connection}]/[SERVER]: {nickname} => joined the chat".encode('utf8'))
+            thread = threading.Thread(target=self.handle_client, args=(client, nickname))
+            thread.start()
+
+    def send_broadcast_message(self, message):
+        for client in self.clients:
+            client.send(message)
+
+    def handle_client(self, client, username):
+        while True:
+            try:
+                message = client.recv(1024)
+                self.send_broadcast_message(f"[{username}]/:".encode('utf8') + message)
+            except:
+                index = self.clients.index(client)
+                self.clients.remove(client)
+                client.close()
+                nickname = self.nicknames[index]
+                self.nicknames.remove(nickname)
+                break
+
+
+if __name__ == '__main__':
+    server_chat = Server()
+    server_chat.run()
